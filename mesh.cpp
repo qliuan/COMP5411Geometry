@@ -324,6 +324,7 @@ bool Mesh::loadMeshFile(const std::string filename) {
 		}
 
 		std::vector< HEdge* > hedgeList;
+
 		for (int i = 0; i < mBHEdgeList.size(); ++i) {
 			if (mBHEdgeList[i]->start()) {
 				hedgeList.push_back(mBHEdgeList[i]);
@@ -536,9 +537,24 @@ int Mesh::countBoundaryLoops() {
 	/*          Insert your code here.            */
 	/**********************************************/
 
-	for (int i=0; i<mFaceList.size(); i++)
+	//std::cout << "Size of mBHEdgeList " << mBHEdgeList.size() << std::endl;
+
+	for(int i=0; i<mBHEdgeList.size(); ++i)
 	{
-		if (mFaceList[i]->isBoundary()) count++;
+		mBHEdgeList[i]->setFlag(false);
+	}
+
+	for(int i=0; i<mBHEdgeList.size(); ++i)
+	{
+		if (mBHEdgeList[i]->flag())		continue;
+		count++;
+		HEdge* start = mBHEdgeList[i];
+		HEdge* iter = start->next();
+		while(iter != start)
+		{
+			iter->setFlag(true);
+			iter = iter->next();
+		}
 	}
 
 	/*
@@ -622,7 +638,7 @@ void Mesh::computeVertexNormals() {
 			Eigen::Vector3f p1 = surr.back()->position();
 			surr.pop_back();
 			Eigen::Vector3f p3 = surr.back()->position();
-			norms.push_back(triangleNormal(p1,p2,p3));
+			norms.push_back(triangleArea(p1,p2,p3)*triangleNormal(p1,p2,p3));
 		}
 
 		Eigen::Vector3f norm_sum(0,0,0);
@@ -661,7 +677,7 @@ void Mesh::umbrellaSmooth(bool cotangentWeights) {
 		/* scheme for explicit mesh smoothing.
 		/*
 		/* Hint:
-		/* It is advised to double type to store the
+		/* It is advised to double type to store thee
 		/* weights to avoid numerical issues.
 		/**********************************************/
 
@@ -669,6 +685,7 @@ void Mesh::umbrellaSmooth(bool cotangentWeights) {
 		/**********************************************/
 		/*          Insert your code here.            */
 		/**********************************************/
+
 		/*
 		/* Step 2: Implement the uniform weighting
 		/* scheme for explicit mesh smoothing.
