@@ -753,32 +753,21 @@ void Mesh::umbrellaSmooth(bool cotangentWeights) {
 			// insert position
 			matrixP.row(i) = ver->position();
 			// insert laplacian
-			matrixL.insert(i,i) = (float)1;
+			matrixL.insert(i,i) = (float)(-1);
 			int valence = ver->valence();
 			OneRingVertex ring = OneRingVertex(ver);
 			Vertex *iter = nullptr;
 			while(iter = ring.nextVertex())
 			{
-				matrixL.insert(i,iter->index()) = -1/(float)valence;
+				matrixL.insert(i,iter->index()) = 1/(float)valence;
 			}
 		}
 
-		matrixP = matrixP - lamda*matrixL*matrixP;
+		matrixP = matrixP + lamda*matrixL*matrixP;
 		for (int i=0; i<dim; ++i)
 		{
 			mVertexList[i]->setPosition(matrixP.row(i).transpose());
 		}
-
-		/*std::cout << "Debugging P" << std::endl;
-		std::cout << matrixP << std::endl;
-		std::cout << "Debugging L" << std::endl;
-		std::cout << matrixL << std::endl;
-		std::cout << "0.5*L*P" << std::endl;
-		std::cout << 0.5*matrixL*matrixP << std::endl;
-		std::cout << "P - 0.5*L*P" << std::endl;
-		std::cout << matrixP - 0.5*matrixL*matrixP << std::endl;
-		std::cout << "End" << std::endl;*/
-
 
 		/*
 		/* Step 2: Implement the uniform weighting
@@ -807,6 +796,35 @@ void Mesh::implicitUmbrellaSmooth(bool cotangentWeights) {
 		/**********************************************/
 		/*          Insert your code here.            */
 		/**********************************************/
+
+		//cout << "x before computing" << endl << x << endl;
+
+		/*Eigen::ConjugateGradient<Eigen::SparseMatrix<float>, Eigen::Lower|Eigen::Upper> cg;
+		cg.compute(A);
+		while(cg.iterations() < maxIterations && cg.error() > errorTolerance )
+		{
+			x = cg.solve(b);
+		}*/
+
+		Eigen::VectorXf r = b - A*x;
+		Eigen::VectorXf p = r;
+		int count = 0;
+		float error = r.transpose()*r;
+		while(count<maxIterations && error>errorTolerance)
+		{
+			float alpha = ((r.transpose()*r)/(p.transpose()*A*p))(0);
+			x = x + alpha*p;
+			Eigen::VectorXf rStar = r - alpha*A*p;
+			float beta = ((rStar.transpose()*rStar)/(r.transpose()*r))(0);
+			p = rStar + beta*p;
+			r = rStar;
+			error = r.transpose()*r;
+			count++;
+		}
+
+		//cout << "x returning" << endl << x << endl;
+		return x;
+
 		/*
 		/* Params:
 		/*  A:
@@ -830,6 +848,73 @@ void Mesh::implicitUmbrellaSmooth(bool cotangentWeights) {
 		/**********************************************/
 		/*          Insert your code here.            */
 		/**********************************************/
+
+		int dim = mVertexList.size();
+        Eigen::SparseMatrix<float> matrixA(dim,dim);
+        Eigen::MatrixXf matrixP(dim,3);
+        float lamda = 0.5;
+
+		vector<int> indecies;
+        vector<float> weights;
+        float weightSum = 0;
+
+        for (int i = 0; i < dim; ++i) {
+            Vertex *ver = mVertexList[i];
+            matrixP.row(i) = ver->position();
+            matrixA.insert(i,i) = (float)1 - lamda*(float)(-1);
+
+            // For every neighboring half edge of p0->p1
+            OneRingHEdge ring(ver);
+            HEdge* curr = nullptr;
+
+            while (curr = ring.nextHEdge()) {
+                // Computing weights of p1 w.r.t p0
+                Eigen::Vector3f p0 = ver->position();
+                Eigen::Vector3f p1 = curr->end()->position();
+                Eigen::Vector3f p2 = curr->next()->end()->position();
+                Eigen::Vector3f p3 = curr->twin()->prev()->start()->position();
+                double cotAlpha = triangleCot(p0,p2,p1);
+                double cotBeta =  triangleCot(p0,p3,p1);
+
+                float w;
+                if (!curr->end()->isBoundary()) w = ((float)(cotAlpha + cotBeta))/2;
+                else w = curr->isBoundary()? (float)cotAlpha:(float)cotBeta;
+
+                // Recording weights and indecies
+                indecies.push_back(curr->end()->index());
+                weights.push_back(w);
+                weightSum += w;
+            }
+
+            // Set up terms related to p0 in sparse matrixA
+            for(int j=0; j<indecies.size(); j++){
+                matrixA.insert(i,indecies[j]) = -lamda * weights[j]/weightSum;
+            }
+
+            // Rebase
+            indecies.clear();
+            weights.clear();
+            weightSum = 0;
+        }
+
+        // Solve A*P' = P for P'(result)
+        Eigen::MatrixXf result(dim,3);
+		Eigen::VectorXf col(dim);
+
+		for (int i=0; i<dim; ++i)
+		{
+			col(i) = (float)0;
+		}
+
+		for (int i=0; i<3; i++)
+		{
+			result.col(i) = fnConjugateGradient(matrixA, matrixP.col(i), 100, 0.0001, col);
+		}
+
+        for (int i = 0; i < dim; ++i) {
+            mVertexList[i]->setPosition(result.row(i).transpose());
+        }
+
 		/*
 		/* Step 2: Implement the cotangent weighting
 		/* scheme for implicit mesh smoothing. Use
@@ -846,6 +931,54 @@ void Mesh::implicitUmbrellaSmooth(bool cotangentWeights) {
 		/**********************************************/
 		/*          Insert your code here.            */
 		/**********************************************/
+
+		int dim = mVertexList.size();
+		Eigen::MatrixXf matrixP(dim,3);
+		Eigen::SparseMatrix<float> matrixA(dim,dim);
+		float lamda = 0.5;
+
+		for (int i=0; i<dim; ++i)
+		{
+			Vertex *ver = mVertexList[i];
+			// Insert position
+			matrixP.row(i) = ver->position();
+			// Insert A = I - lamda*L
+			matrixA.insert(i,i) = (float)1 - lamda*(float)(-1);
+			int valence = ver->valence();
+			OneRingVertex ring = OneRingVertex(ver);
+			Vertex *iter = nullptr;
+			while(iter = ring.nextVertex())
+			{
+				matrixA.insert(i,iter->index()) = -lamda/(float)valence;
+			}
+		}
+		/*
+		cout << "Debugging P" << endl;
+		cout << matrixP << endl;
+		cout << "Debugging A" << endl;
+		cout << matrixA << endl;
+		*/
+
+		// Solve A*P' = P for P'(result)
+		Eigen::MatrixXf result(dim,3);
+		Eigen::VectorXf col(dim);
+
+		for (int i=0; i<dim; ++i)
+		{
+			col(i) = (float)0;
+		}
+
+		for (int i=0; i<3; i++)
+		{
+			//cout << "i = " << i << endl;
+			result.col(i) = fnConjugateGradient(matrixA, matrixP.col(i), 100, 0.0001, col);
+		}
+
+		for (int i=0; i<mVertexList.size(); ++i)
+		{
+			mVertexList[i]->setPosition(result.row(i).transpose());
+		}
+
 		/*
 		/* Step 3: Implement the uniform weighting
 		/* scheme for implicit mesh smoothing. Use
