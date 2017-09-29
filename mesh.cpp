@@ -677,20 +677,21 @@ void Mesh::umbrellaSmooth(bool cotangentWeights) {
 		int dim = mVertexList.size();
         Eigen::SparseMatrix<float> matrixL(dim,dim);
         Eigen::MatrixXf matrixP(dim,3);
+        float lamda = 0.5;
+
+		vector<int> indecies;
+        vector<float> weights;
+        float weightSum = 0;
 
         for (int i = 0; i < dim; ++i) {
             Vertex *ver = mVertexList[i];
             matrixP.row(i) = ver->position();
-            int valence = ver->valence();
+            matrixL.insert(i,i) = (float)(-1);
 
             // For every neighboring half edge of p0->p1
             OneRingHEdge ring(ver);
             HEdge* curr = nullptr;
 
-            int indecies[valence];
-            float weights[valence];
-            float weightSum = 0;
-            int count = 0;
             while (curr = ring.nextHEdge()) {
                 // Computing weights of p1 w.r.t p0
                 Eigen::Vector3f p0 = ver->position();
@@ -704,19 +705,24 @@ void Mesh::umbrellaSmooth(bool cotangentWeights) {
                 if (!curr->end()->isBoundary()) w = ((float)(cotAlpha + cotBeta))/2;
                 else w = curr->isBoundary()? (float)cotAlpha:(float)cotBeta;
 
-                indecies[count] = curr->end()->index();
-                weights[count] = w;
-                weightSum += weights[count];
-                count++;
+                // Recording weights and indecies
+                indecies.push_back(curr->end()->index());
+                weights.push_back(w);
+                weightSum += w;
             }
 
             // Set up terms related to p0 in sparse matrixL
-            for(int j=0; j<valence; j++){
+            for(int j=0; j<indecies.size(); j++){
                 matrixL.insert(i,indecies[j]) = weights[j]/weightSum;
             }
+
+            // Rebase
+            indecies.clear();
+            weights.clear();
+            weightSum = 0;
         }
 
-        matrixP = matrixL * matrixP;
+        matrixP = matrixP + lamda*matrixL*matrixP;
         for (int i = 0; i < dim; ++i) {
             mVertexList[i]->setPosition(matrixP.row(i).transpose());
         }
@@ -739,6 +745,7 @@ void Mesh::umbrellaSmooth(bool cotangentWeights) {
 		int dim = mVertexList.size();
 		Eigen::MatrixXf matrixP(dim, 3);
 		Eigen::SparseMatrix<float> matrixL(dim,dim);
+		float lamda = 0.5;
 
 		for (int i=0; i<dim; ++i)
 		{
@@ -756,7 +763,7 @@ void Mesh::umbrellaSmooth(bool cotangentWeights) {
 			}
 		}
 
-		matrixP = matrixP - 0.5*matrixL*matrixP;
+		matrixP = matrixP - lamda*matrixL*matrixP;
 		for (int i=0; i<dim; ++i)
 		{
 			mVertexList[i]->setPosition(matrixP.row(i).transpose());
