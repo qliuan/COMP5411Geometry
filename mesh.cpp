@@ -2,6 +2,7 @@
 #include <iostream>
 #include <igl/read_triangle_mesh.h>
 #include <Eigen/Sparse>
+using namespace std;
 
 
 HEdge::HEdge(bool b) {
@@ -672,6 +673,55 @@ void Mesh::umbrellaSmooth(bool cotangentWeights) {
 		/**********************************************/
 		/*          Insert your code here.            */
 		/**********************************************/
+
+		int dim = mVertexList.size();
+        Eigen::SparseMatrix<float> matrixL(dim,dim);
+        Eigen::MatrixXf matrixP(dim,3);
+
+        for (int i = 0; i < dim; ++i) {
+            Vertex *ver = mVertexList[i];
+            matrixP.row(i) = ver->position();
+            int valence = ver->valence();
+
+            // For every neighboring half edge of p0->p1
+            OneRingHEdge ring(ver);
+            HEdge* curr = nullptr;
+
+            int indecies[valence];
+            float weights[valence];
+            float weightSum = 0;
+            int count = 0;
+            while (curr = ring.nextHEdge()) {
+                // Computing weights of p1 w.r.t p0
+                Eigen::Vector3f p0 = ver->position();
+                Eigen::Vector3f p1 = curr->end()->position();
+                Eigen::Vector3f p2 = curr->next()->end()->position();
+                Eigen::Vector3f p3 = curr->twin()->prev()->start()->position();
+                double cotAlpha = triangleCot(p0,p2,p1);
+                double cotBeta =  triangleCot(p0,p3,p1);
+
+                float w;
+                if (!curr->end()->isBoundary()) w = ((float)(cotAlpha + cotBeta))/2;
+                else w = curr->isBoundary()? (float)cotAlpha:(float)cotBeta;
+
+                indecies[count] = curr->end()->index();
+                weights[count] = w;
+                weightSum += weights[count];
+                count++;
+            }
+
+            // Set up terms related to p0 in sparse matrixL
+            for(int j=0; j<valence; j++){
+                matrixL.insert(i,indecies[j]) = weights[j]/weightSum;
+            }
+        }
+
+        matrixP = matrixL * matrixP;
+        for (int i = 0; i < dim; ++i) {
+            mVertexList[i]->setPosition(matrixP.row(i).transpose());
+        }
+
+
 		/*
 		/* Step 1: Implement the cotangent weighting
 		/* scheme for explicit mesh smoothing.
@@ -685,6 +735,43 @@ void Mesh::umbrellaSmooth(bool cotangentWeights) {
 		/**********************************************/
 		/*          Insert your code here.            */
 		/**********************************************/
+
+		int dim = mVertexList.size();
+		Eigen::MatrixXf matrixP(dim, 3);
+		Eigen::SparseMatrix<float> matrixL(dim,dim);
+
+		for (int i=0; i<dim; ++i)
+		{
+			Vertex *ver = mVertexList[i];
+			// insert position
+			matrixP.row(i) = ver->position();
+			// insert laplacian
+			matrixL.insert(i,i) = (float)1;
+			int valence = ver->valence();
+			OneRingVertex ring = OneRingVertex(ver);
+			Vertex *iter = nullptr;
+			while(iter = ring.nextVertex())
+			{
+				matrixL.insert(i,iter->index()) = -1/(float)valence;
+			}
+		}
+
+		matrixP = matrixP - 0.5*matrixL*matrixP;
+		for (int i=0; i<dim; ++i)
+		{
+			mVertexList[i]->setPosition(matrixP.row(i).transpose());
+		}
+
+		/*std::cout << "Debugging P" << std::endl;
+		std::cout << matrixP << std::endl;
+		std::cout << "Debugging L" << std::endl;
+		std::cout << matrixL << std::endl;
+		std::cout << "0.5*L*P" << std::endl;
+		std::cout << 0.5*matrixL*matrixP << std::endl;
+		std::cout << "P - 0.5*L*P" << std::endl;
+		std::cout << matrixP - 0.5*matrixL*matrixP << std::endl;
+		std::cout << "End" << std::endl;*/
+
 
 		/*
 		/* Step 2: Implement the uniform weighting
