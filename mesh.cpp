@@ -799,13 +799,6 @@ void Mesh::implicitUmbrellaSmooth(bool cotangentWeights) {
 
 		//cout << "x before computing" << endl << x << endl;
 
-		/*Eigen::ConjugateGradient<Eigen::SparseMatrix<float>, Eigen::Lower|Eigen::Upper> cg;
-		cg.compute(A);
-		while(cg.iterations() < maxIterations && cg.error() > errorTolerance )
-		{
-			x = cg.solve(b);
-		}*/
-
 		Eigen::VectorXf r = b - A*x;
 		Eigen::VectorXf p = r;
 		int count = 0;
@@ -843,6 +836,9 @@ void Mesh::implicitUmbrellaSmooth(bool cotangentWeights) {
 	/* IMPORTANT:
 	/* Please refer to the following link about the sparse matrix construction in Eigen. */
 	/* http://eigen.tuxfamily.org/dox/group__TutorialSparse.html#title3 */
+
+	int MAX_ITERATION = 1000;
+	float ERROR_TOLERANCE = 1e-5;
 
 	if (cotangentWeights) {
 		/**********************************************/
@@ -908,7 +904,7 @@ void Mesh::implicitUmbrellaSmooth(bool cotangentWeights) {
 
 		for (int i=0; i<3; i++)
 		{
-			result.col(i) = fnConjugateGradient(matrixA, matrixP.col(i), 100, 0.0001, col);
+			result.col(i) = fnConjugateGradient(matrixA, matrixP.col(i), MAX_ITERATION, ERROR_TOLERANCE, col);
 		}
 
         for (int i = 0; i < dim; ++i) {
@@ -952,12 +948,6 @@ void Mesh::implicitUmbrellaSmooth(bool cotangentWeights) {
 				matrixA.insert(i,iter->index()) = -lamda/(float)valence;
 			}
 		}
-		/*
-		cout << "Debugging P" << endl;
-		cout << matrixP << endl;
-		cout << "Debugging A" << endl;
-		cout << matrixA << endl;
-		*/
 
 		// Solve A*P' = P for P'(result)
 		Eigen::MatrixXf result(dim,3);
@@ -970,8 +960,7 @@ void Mesh::implicitUmbrellaSmooth(bool cotangentWeights) {
 
 		for (int i=0; i<3; i++)
 		{
-			//cout << "i = " << i << endl;
-			result.col(i) = fnConjugateGradient(matrixA, matrixP.col(i), 100, 0.0001, col);
+			result.col(i) = fnConjugateGradient(matrixA, matrixP.col(i), MAX_ITERATION, ERROR_TOLERANCE, col);
 		}
 
 		for (int i=0; i<mVertexList.size(); ++i)
